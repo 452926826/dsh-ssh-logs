@@ -1,0 +1,16 @@
+- insert:
+    - id: mcp-ssh-logs
+      name: '@deepseek-ai/dsh-mcp-client'
+      config:
+        serverName: ssh_logs
+        transport: stdio
+        command: node
+        args:
+          - !!js resolve('./src/server.js')
+        cwd: !!js resolve('.')
+        env:
+          DSH_SSH_LOGS_CONFIG: !!js >-
+            process.env.DSH_SSH_LOGS_CONFIG ||
+            dshHomePath('ssh-logs.yml')
+        toolCallTimeoutMs: 120000
+        failOnStartupError: true

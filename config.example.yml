@@ -1,0 +1,24 @@
+defaults:
+  maxBytes: 131072
+  connectTimeoutSeconds: 10
+  commandTimeoutMs: 120000
+
+servers:
+  production:
+    description: Production application server
+    host: prod-app.example.com
+    user: log-reader
+    port: 22
+    identityFile: ~/.ssh/prod_log_reader
+    knownHostsFile: ~/.ssh/known_hosts
+    roots:
+      app: /srv/myapp/logs
+      nginx: /var/log/nginx
+
+  staging:
+    description: Staging application server
+    host: 10.20.30.40
+    user: log-reader
+    proxyJump: bastion.example.com
+    roots:
+      app: /opt/myapp/logs

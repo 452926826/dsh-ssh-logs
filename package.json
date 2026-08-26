@@ -16,19 +16,42 @@
       "patch": "./cordis.patch.yml"
     }
   },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/452926826/dsh-ssh-logs.git"
+  },
+  "homepage": "https://github.com/452926826/dsh-ssh-logs#readme",
+  "bugs": {
+    "url": "https://github.com/452926826/dsh-ssh-logs/issues"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "mcp",
+    "ssh",
+    "logs"
+  ],
+  "engines": {
+    "node": ">=20"
+  },
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.12.0",
     "yaml": "^2.8.1",
     "zod": "^3.24.0"
   },
   "scripts": {
-    "check": "node --check src/server.js && node --test test/core.test.js && node test/mcp-smoke.js"
+    "test": "node --test test/*.test.js && node test/mcp-smoke.js",
+    "check": "node --check src/server.js && npm test",
+    "prepack": "npm run check"
   },
   "files": [
     "src",
     "cordis.patch.yml",
     "config.example.yml",
-    "README.md"
+    "README.md",
+    "README.zh-CN.md",
+    "LICENSE"
   ],
   "license": "MIT"
 }

@@ -6,8 +6,17 @@
         transport: stdio
         command: node
         args:
-          - !!js resolve('./src/server.js')
-        cwd: !!js resolve('.')
+          - !!js >-
+            process.getBuiltinModule('node:path').join(
+              process.getBuiltinModule('node:path').dirname(
+                process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-ssh-logs/package.json')
+              ),
+              'src/server.js'
+            )
+        cwd: !!js >-
+          process.getBuiltinModule('node:path').dirname(
+            process.getBuiltinModule('node:module').createRequire(baseUrl).resolve('dsh-ssh-logs/package.json')
+          )
         env:
           DSH_SSH_LOGS_CONFIG: !!js >-
             process.env.DSH_SSH_LOGS_CONFIG ||

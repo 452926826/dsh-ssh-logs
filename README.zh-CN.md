@@ -19,6 +19,12 @@ npm install
 dsh plugin --profile web add "$PWD"
 ```
 
+也可以直接从 GitHub 安装：
+
+```bash
+dsh plugin --profile web add github:452926826/dsh-ssh-logs
+```
+
 创建 `~/.dsh/ssh-logs.yml`，参考 `config.example.yml`。推荐为每台服务器创建只能读取日志的系统用户，并使用 SSH key 或 ssh-agent；不要在 YAML 中保存密码或私钥内容。
 
 配置完成后重启当前 `dsh web` 进程并刷新页面。Bundle 会注册一个 MCP client，让 agent preset 能够发现这些日志工具。

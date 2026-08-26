@@ -19,6 +19,12 @@ npm install
 dsh plugin --profile web add "$PWD"
 ```
 
+It can also be installed directly from GitHub:
+
+```bash
+dsh plugin --profile web add github:452926826/dsh-ssh-logs
+```
+
 Create `~/.dsh/ssh-logs.yml` using `config.example.yml` as a reference. Use a dedicated read-only account on each server and authenticate with an SSH key or ssh-agent. Do not store passwords or private key contents in the YAML file.
 
 Restart `dsh web` and refresh the page after configuring the plugin. The Bundle registers an MCP client so agent presets can discover the log tools.

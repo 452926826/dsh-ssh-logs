@@ -2,73 +2,74 @@
 
 [English](README.md) | 简体中文
 
-DeepSeek Harness 的只读 SSH 日志工具。它使用 DSH 自带的 `@deepseek-ai/dsh-mcp-client`，向模型提供三个 MCP 工具：
-
-- `mcp__ssh_logs__list_log_servers`
-- `mcp__ssh_logs__read_log`
-- `mcp__ssh_logs__search_log`
-
-服务器使用固定别名配置。模型不能指定任意主机、执行任意命令或写远端文件；文件路径必须位于配置好的日志根目录内。
+为 DeepSeek Harness 提供受控 SSH 命令执行、可视化配置和 `@服务器` 选择。安装后在“设置 → 插件 → SSH 服务器”中新增、修改或删除服务器。
 
 ## 安装
 
-```bash
-git clone https://github.com/452926826/dsh-ssh-logs.git
-cd dsh-ssh-logs
-npm install
-dsh plugin --profile web add "$PWD"
-```
-
-也可以直接从 GitHub 安装：
+需要 DSH `>=0.2.2-rc.1 <0.3.0-0` 和 Node.js 20 或更高版本。
 
 ```bash
 dsh plugin --profile web add github:452926826/dsh-ssh-logs
 ```
 
-创建 `~/.dsh/ssh-logs.yml`，参考 `config.example.yml`。推荐为每台服务器创建只能读取日志的系统用户，并使用 SSH key 或 ssh-agent；不要在 YAML 中保存密码或私钥内容。
+重启 `dsh web` 并刷新页面。插件会同时加载 Host 配置服务、Web 设置页和受控 MCP 工具。
 
-配置完成后重启当前 `dsh web` 进程并刷新页面。Bundle 会注册一个 MCP client，让 agent preset 能够发现这些日志工具。
+## SSH 配置
 
-## 对话示例
+每个服务器支持：
+
+- SSH 名称：对话中的稳定别名
+- IP 或主机名、端口、账号
+- 密码认证，旧版 YAML 可配置 SSH key
+- `allowedCommands`：仅在读写模式下允许的命令名列表（旧版 YAML 可省略）
+- `deniedCommands`：可选的禁止命令名列表，始终优先于允许规则
+
+密码保存在当前 DSH 主机的 `$DSH_HOME/ssh-logs/servers.json`，文件权限为 `0600`。API 和浏览器不返回密码；仅连接身份不变时编辑留空才保留旧密码，变更主机、端口、账号、跳板机或密钥文件需要重新提供凭据。
+
+密码认证不能与 `proxyJump` 同时使用；跳板机连接请使用 SSH key。密码认证通过 `-F /dev/null` 忽略用户和系统 SSH 配置，包括主机别名、代理命令及其他自定义选项；请明确配置真实主机、端口、账号和 known-hosts 文件。SSH key 认证保持原有 SSH 配置行为。
+
+只读服务器通过 `read_log` 和 `search_log` 访问 YAML 中配置的日志根目录。通用 `run_remote_command` 需要显式开启远程命令（读写权限），且命令名必须在允许列表中。命令白名单不是沙箱：允许的程序及参数可能修改文件或执行其他程序，不能用于不可信用户或服务器。
+
+旧配置缺少 `allowedCommands` 时仍可使用日志根目录工具，但不允许任何通用命令。设置页中的同名服务器会覆盖 YAML 配置；请为 YAML 日志根目录使用独立别名。根目录检查只处理路径字符串，远端符号链接可能越界；必须通过服务器端账号权限限制读取范围。
+
+## 对话使用
+
+在输入框输入 `@`，选择某个 SSH 服务器：
 
 ```text
-去 production 服务器 app 日志目录读取 service/api.log 最后 300 行。
-
-在 staging 的 app 根目录搜索 logs/backend.log 里的 request-id=abc123，带 3 行上下文。
+@production 执行 tail -n 300 /var/log/nginx/access.log
+@staging 执行 grep -nF request-id=abc123 /srv/app/backend.log
 ```
 
-如果用户说的是物理目录而不是 root 别名，模型应先调用 `list_log_servers`，把目录匹配到配置中的 root，然后调用读取或搜索工具。
+选择后会插入 `@服务器名`。只读服务器使用日志根目录工具，通用命令需要读写授权；密码不会进入对话上下文。
 
-## 配置
+## 安全边界
+
+- SSH 要求 `known_hosts` 中已有可信主机密钥。写入前应通过独立渠道核验指纹；`ssh-keyscan` 本身不能认证主机。
+- 默认拒绝；禁止规则始终覆盖允许规则。
+- 每次只能运行一个命令；拒绝 shell 控制操作符、管道、重定向、命令替换和换行。
+- 命令输出受字节数和超时限制。
+- 密码不通过 API、MCP 工具列表或 `@` 候选返回。
+- 生产环境仍应使用专用低权限账号、受控来源 IP，并限制远端权限。
+
+## YAML 示例
 
 ```yaml
-defaults:
-  maxBytes: 131072
-  connectTimeoutSeconds: 10
-  commandTimeoutMs: 120000
-
 servers:
   production:
-    description: Production application server
     host: prod-app.example.com
     user: log-reader
     port: 22
     identityFile: ~/.ssh/prod_log_reader
-    knownHostsFile: ~/.ssh/known_hosts
-    proxyJump: bastion.example.com
     roots:
       app: /srv/myapp/logs
-      nginx: /var/log/nginx
+    allowedCommands:
+      - tail
+      - grep
+      - ls
+    deniedCommands:
+      - rm
+      - sudo
+      - sh
+      - bash
 ```
-
-每台服务器支持：`description`、`host`、`user`、`port`、`identityFile`、`knownHostsFile`、`proxyJump`、`roots`、`maxBytes`、`connectTimeoutSeconds`、`commandTimeoutMs`。
-
-## 安全边界
-
-- SSH 强制 `BatchMode=yes`、`StrictHostKeyChecking=yes` 和独立的 `known_hosts` 路径。
-- 服务器和日志根目录必须预配置；拒绝绝对路径、反斜杠和 `..` 越界。
-- 只生成固定的 `head`、`tail`、`sed`、`grep -F` 远端命令，所有动态值都经过 shell quoting。
-- 每次最多读取 5000 行、搜索 1000 个匹配，默认输出上限 128 KiB，可配置但硬上限 4 MiB。
-- 不支持密码交互、sudo、任意命令、SFTP 写入、删除或修改文件。
-
-仍应在服务器端实施最小权限：专用 `log-reader` 账户、只读 ACL、受控来源 IP，必要时在 `authorized_keys` 中增加命令或能力限制。

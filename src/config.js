@@ -1,4 +1,5 @@
 import { readFile } from 'node:fs/promises';
+import { SshServerStore } from './store.js';
 import { homedir } from 'node:os';
 import path from 'node:path';
 import YAML from 'yaml';
@@ -36,23 +37,28 @@ function optionalString(value, name) {
   return requiredString(value, name);
 }
 
+function normalizeCommands(value, field, { required = false } = {}) {
+  if (value === undefined && !required) return [];
+  if (!Array.isArray(value)) throw new Error(`${field} must be an array of command names`);
+  const commands = [...new Set(value.map((command, index) => requiredString(command, `${field}[${index}]`)))];
+  for (const command of commands) {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._+-]{0,127}$/.test(command)) {
+      throw new Error(`${field} entries must be executable command names`);
+    }
+  }
+  if (required && commands.length === 0) throw new Error(`${field} must not be empty`);
+  return commands;
+}
+
 function normalizeRoots(value, serverName) {
-  if (!value || typeof value !== 'object' || Array.isArray(value)) {
-    throw new Error(`servers.${serverName}.roots must be a non-empty mapping`);
-  }
+  if (value === undefined) return {};
+  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error(`servers.${serverName}.roots must be a mapping`);
   const roots = {};
-  for (const [rootName, rootPath] of Object.entries(value)) {
-    if (!NAME_RE.test(rootName)) {
-      throw new Error(`servers.${serverName}.roots has invalid alias ${JSON.stringify(rootName)}`);
-    }
-    const normalized = path.posix.normalize(requiredString(rootPath, `servers.${serverName}.roots.${rootName}`));
-    if (!normalized.startsWith('/') || normalized === '/') {
-      throw new Error(`servers.${serverName}.roots.${rootName} must be an absolute non-root path`);
-    }
-    roots[rootName] = normalized.replace(/\/$/, '');
-  }
-  if (Object.keys(roots).length === 0) {
-    throw new Error(`servers.${serverName}.roots must not be empty`);
+  for (const [name, root] of Object.entries(value)) {
+    if (!NAME_RE.test(name)) throw new Error(`invalid root alias ${JSON.stringify(name)}`);
+    const normalized = path.posix.normalize(requiredString(root, `servers.${serverName}.roots.${name}`));
+    if (!normalized.startsWith('/') || normalized === '/') throw new Error('log root must be an absolute non-root path');
+    roots[name] = normalized;
   }
   return roots;
 }
@@ -93,10 +99,15 @@ export function normalizeConfig(raw) {
       knownHostsFile: expandHome(optionalString(value.knownHostsFile, `servers.${name}.knownHostsFile`) ?? '~/.ssh/known_hosts'),
       proxyJump: optionalString(value.proxyJump, `servers.${name}.proxyJump`),
       roots: normalizeRoots(value.roots, name),
+      allowedCommands: normalizeCommands(value.allowedCommands, `servers.${name}.allowedCommands`),
+      deniedCommands: normalizeCommands(value.deniedCommands, `servers.${name}.deniedCommands`),
+      permission: value.permission === 'read-write' ? 'read-write' : 'read-only',
+      password: optionalString(value.password, `servers.${name}.password`),
       maxBytes: positiveInteger(value.maxBytes, defaults.maxBytes, `servers.${name}.maxBytes`),
       connectTimeoutSeconds: positiveInteger(value.connectTimeoutSeconds, defaults.connectTimeoutSeconds, `servers.${name}.connectTimeoutSeconds`),
       commandTimeoutMs: positiveInteger(value.commandTimeoutMs, defaults.commandTimeoutMs, `servers.${name}.commandTimeoutMs`),
     };
+    if (servers[name].password && servers[name].proxyJump) throw new Error(`servers.${name}: password authentication cannot be combined with proxyJump`);
     if (servers[name].port > 65535) throw new Error(`servers.${name}.port must not exceed 65535`);
     if (servers[name].maxBytes > 4 * 1024 * 1024) throw new Error(`servers.${name}.maxBytes must not exceed 4194304`);
   }
@@ -104,9 +115,31 @@ export function normalizeConfig(raw) {
   return { defaults, servers };
 }
 
-export async function loadConfig(configPath = process.env.DSH_SSH_LOGS_CONFIG) {
-  if (!configPath) throw new Error('DSH_SSH_LOGS_CONFIG is not set');
-  const resolved = path.resolve(expandHome(configPath));
-  const text = await readFile(resolved, 'utf8');
-  return { path: resolved, ...normalizeConfig(YAML.parse(text)) };
+export async function loadConfig(configPath = process.env.DSH_SSH_LOGS_CONFIG, statePath = process.env.DSH_SSH_LOGS_STATE) {
+  let legacy = { defaults: DEFAULTS, servers: {} };
+  let resolved;
+  if (configPath) {
+    resolved = path.resolve(expandHome(configPath));
+    try {
+      legacy = normalizeConfig(YAML.parse(await readFile(resolved, 'utf8')));
+    } catch (error) {
+      if (error?.code !== 'ENOENT') throw error;
+    }
+  }
+  const stored = statePath ? await new SshServerStore(statePath).listRaw() : {};
+  const servers = { ...legacy.servers };
+  for (const [name, server] of Object.entries(stored)) {
+    servers[name] = {
+      ...server,
+      description: undefined,
+      identityFile: server.identityFile,
+      knownHostsFile: expandHome('~/.ssh/known_hosts'),
+      proxyJump: server.proxyJump,
+      maxBytes: legacy.defaults.maxBytes,
+      connectTimeoutSeconds: legacy.defaults.connectTimeoutSeconds,
+      commandTimeoutMs: legacy.defaults.commandTimeoutMs,
+    };
+  }
+  if (Object.keys(servers).length === 0) throw new Error('No SSH servers are configured');
+  return { path: resolved, defaults: legacy.defaults, servers };
 }

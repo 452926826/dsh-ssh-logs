@@ -13,12 +13,27 @@ servers:
     knownHostsFile: ~/.ssh/known_hosts
     roots:
       app: /srv/myapp/logs
-      nginx: /var/log/nginx
+    allowedCommands:
+      - tail
+      - head
+      - grep
+      - sed
+      - ls
+    deniedCommands:
+      - rm
+      - rmdir
+      - sudo
+      - sh
+      - bash
 
   staging:
     description: Staging application server
     host: 10.20.30.40
     user: log-reader
     proxyJump: bastion.example.com
-    roots:
-      app: /opt/myapp/logs
+    allowedCommands:
+      - tail
+      - grep
+    deniedCommands:
+      - rm
+      - sudo
